@@ -5,10 +5,38 @@ from scipy.interpolate import interp1d
 
 
 def decimation_signal(signal_in, N_decimate):
-    return signal_in[::N_decimate]
+    '''Función que decima una señal.
+
+    Parameters
+    ----------
+    signal_in : ndarray or list
+        Señal de entrada.
+    N_decimate : int
+        Tamaño del paso de decimación.
+
+    Returns
+    -------
+    decimated_signal : ndarray
+        Señal decimada con el paso especificado.
+    '''
+    return np.array(signal_in[::N_decimate])
 
 
 def stretch_signal(signal_in, N_stretch):
+    '''Función que estira una señal.
+
+    Parameters
+    ----------
+    signal_in : ndarray or list
+        Señal de entrada.
+    N_stretch : int
+        Cantidad de ceros que se inserta entre cada muestra.
+
+    Returns
+    -------
+    decimated_signal : ndarray
+        Señal estirada con el paso especificado.
+    '''
     return np.array([signal_in[i//N_stretch] if i%N_stretch == 0 else 0
                      for i in range(len(signal_in) * N_stretch)])
 
@@ -17,11 +45,19 @@ def beta_kaiser(A):
     '''Función por tramos que indica el valor que debe tomar el
     parámetro beta
     
-    Parámetros
-    - A: Ganancia máxima entre ripple de pasa banda y rechaza 
-         banda obtenido anteriormente mediante la parametrización
-         
-    Referencias
+    Parameters
+    ----------
+    A: float
+        Ganancia máxima entre ripple de pasa banda y rechaza 
+        banda obtenido anteriormente mediante la parametrización
+    
+    Returns
+    -------
+    beta : float
+        Valor de beta del filtro de Kaiser.
+
+    References
+    ----------
     [1] Digital Signal Processing: Principles, Algorithms, and 
         Applications by J. G. Proakis and D. G. Manolakis.
     '''
@@ -1430,28 +1466,29 @@ def bandpass_filter(signal_in, samplerate, freq_stop_1, freq_pass_1,
 
 
 # Testing module
-'''import soundfile as sf
+if __name__ == '__main__':
+    import soundfile as sf
 
-filename = 'Interest_Audios/Heart_sound_files/Level 4/136_1b1_Ar_sc_Meditron'
-audio, samplerate = sf.read(f'{filename}.wav')
-new_rate, dwns_signal = downsampling_signal(audio, samplerate, 950, 1000, 
-                                            method='lowpass', lp_method='fir', 
-                                            fir_method='kaiser', gpass=1, gstop=80,
-                                            correct_by_gd=True, gd_padding='periodic',
-                                            plot_filter=False, normalize=True)
+    filename = 'Interest_Audios/Heart_sound_files/Level 4/136_1b1_Ar_sc_Meditron'
+    audio, samplerate = sf.read(f'{filename}.wav')
+    new_rate, dwns_signal = downsampling_signal(audio, samplerate, 950, 1000, 
+                                                method='lowpass', lp_method='fir', 
+                                                fir_method='kaiser', gpass=1, gstop=80,
+                                                correct_by_gd=True, gd_padding='periodic',
+                                                plot_filter=False, normalize=True)
 
-restored_signal = upsampling_signal(dwns_signal, new_rate, samplerate,
-                                    N_desired=None, resample_method='interp1d',
-                                    stret_method='lowpass', lp_method='fir', 
-                                    fir_method='kaiser', trans_width=50, gpass=1, gstop=80, 
-                                    correct_by_gd=True, gd_padding='periodic',
-                                    plot_filter=False, plot_signals=False,
-                                    normalize=True)
+    restored_signal = upsampling_signal(dwns_signal, new_rate, samplerate,
+                                        N_desired=None, resample_method='interp1d',
+                                        stret_method='lowpass', lp_method='fir', 
+                                        fir_method='kaiser', trans_width=50, gpass=1, gstop=80, 
+                                        correct_by_gd=True, gd_padding='periodic',
+                                        plot_filter=False, plot_signals=False,
+                                        normalize=True)
 
-print(len(audio))
-print(len(dwns_signal))
-print(len(restored_signal))
+    print(len(audio))
+    print(len(dwns_signal))
+    print(len(restored_signal))
 
-plt.plot(np.linspace(0, len(audio), len(audio)), audio)
-plt.plot(np.linspace(0, len(audio), len(restored_signal)), restored_signal)
-plt.show()'''
+    plt.plot(np.linspace(0, len(audio), len(audio)), audio)
+    plt.plot(np.linspace(0, len(audio), len(restored_signal)), restored_signal)
+    plt.show()

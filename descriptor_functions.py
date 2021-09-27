@@ -1,19 +1,39 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from python_speech_features import mfcc
-from librosa.feature import mfcc as mfcc_in_segm
-from file_management import get_segmentation_points_by_filename
 from math_functions import hamming_window, hann_window, wiener_filter
 from scipy.signal.windows import tukey, nuttall
-from sklearn.decomposition import NMF
 
 
 # Descriptores temporales
 def centroide(signal_in):
+    '''Función que calcula el centroide de una señal de entrada.
+
+    Parameters
+    ----------
+    signal_in: ndarray or list
+        Señal de entrada.
+
+    Returns
+    -------
+    signal_out : ndarray or list
+        Centroide en cada instante de tiempo de la señal.
+    '''
     return sum([i*abs(signal_in[i]) for i in range(len(signal_in))]) / sum(abs(signal_in))
 
 
 def centroide_normalizado(signal_in):
+    '''Función que calcula el centroide normalizado de una señal de entrada.
+
+    Parameters
+    ----------
+    signal_in: ndarray or list
+        Señal de entrada.
+
+    Returns
+    -------
+    signal_out : ndarray or list
+        Centroide normalizado en cada instante de tiempo de la señal.
+    '''
     return sum([i*abs(signal_in[i]) for i in range(len(signal_in))]) / len(signal_in)
 
 
@@ -108,7 +128,6 @@ def abs_fourier_db_half(signal_in, samplerate, N_rep):
     return frec[:len(signal_in) // 2], fourier[:len(signal_in)//2] 
 
 
-# Otros
 def get_spectrogram(signal_in, samplerate, N=512, padding=0, repeat=0, noverlap=0, 
                     window='tukey', whole=False):
     '''Función que permite obtener la STFT de una señal.
@@ -584,191 +603,12 @@ def get_noised_signal(signal_in, snr_expected, seed=None, plot_signals=False,
     return signal_out
 
 
-def nmf_applied_frame_to_frame(audio, samplerate, N=4096, padding=0, 
-                               overlap=0.75, window='hann', n_components=2,
-                               alpha_wiener=1):
-    # A partir del overlap, el tamaño de cada ventana de la fft (dimensión fila)
-    # y la cantidad de frames a las que se les aplicó la transformación
-    # (dimensión columna), se define la cantidad de muestras que representa la
-    # señal original
-    step = int(N * (1 - overlap))      # Tamaño del paso    
-    
-    # Lista donde se almacenará los valores del espectrograma
-    source_array = np.zeros((n_components, len(audio)), dtype=np.complex128)
-    # Lista de suma de ventanas cuadráticas en el tiempo
-    sum_wind2 = np.zeros((len(audio, )), dtype=np.complex128) 
-    
-    # Variables auxiliares
-    audio_ind = 0  # Indice de audio para suma de componentes
-    
-    # Seleccionar ventana
-    if window == 'tukey':
-        wind_mask = tukey(N)
-    elif window == 'hamming':
-        wind_mask = hamming_window(N)
-    elif window == 'hann':
-        wind_mask = hann_window(N)
-    elif window == 'nuttall':
-        wind_mask = nuttall(N)
-    elif window is None:
-        wind_mask = np.array([1] * N)
-    
-    # Iteración sobre el audio
-    while audio.any():
-        # Se corta la cantidad de muestras que se necesite, o bien, las que se
-        # puedan cortar
-        if not len(audio) >= N:
-            # Se corta acá si es que se llega al límite (final se corta)
-            break    
-            
-        # Recorte en la cantidad de muestras
-        audio_frame = audio[:N]
-        audio = audio[step:]
-               
-        # Ventaneando
-        frame_windowed = audio_frame * wind_mask
-        
-        # Aplicando padding
-        frame_padded = np.append(frame_windowed, [0] * padding)
-        
-        # Aplicando transformada de fourier
-        frame_fft = np.fft.fft(frame_padded)
-        
-        # Obteniendo la magnitud y fase, y dejando solo la mitad útil
-        frame_mag = np.abs(frame_fft)[:N//2+1]
-        frame_pha = np.angle(frame_fft)[:N//2+1]
-        
-        # A este frame ventaneado se le aplica NMF
-        model = NMF(n_components=n_components)
-        W = model.fit_transform(np.array([frame_mag]))
-        H = model.components_
-        
-        # Obteniendo las fuentes a partir de las componentes
-        for i in range(n_components):
-            WiHi = np.outer(W[:,i], H[i])
-
-            # Aplicando el filtro de Wiener
-            Yi = wiener_filter(frame_mag, WiHi, W, H, alpha=alpha_wiener) *\
-                    np.exp(1j * frame_pha)
-            
-            # Transponiendo la información
-            Yi = Yi.T
-            
-            # Se refleja lo existente utilizando el conjugado
-            Yi = np.concatenate((Yi, np.flip(np.conj(Yi[1:-1]))), axis=0)
-            
-            # Obteniendo la transformada inversa (se multiplica también por la 
-            # ventana para desventanear)
-            yi = np.array(np.fft.ifft(Yi[:,0])) * wind_mask
-            
-            # Sumando al arreglo la transformada inversa
-            source_array[i, audio_ind:audio_ind+N] += yi
-            
-        # Sumando la ventana al cuadrado (que sirve como ponderador temporal)
-        sum_wind2[audio_ind:audio_ind+N] += wind_mask ** 2 
-        
-        # Agregando al vector de tiempo
-        audio_ind += step
-
-    # Finalmente se aplica la normalización por la cantidad de veces que se 
-    # suma cada muestra en el proceso anterior producto del traslape, 
-    # utilizando las ventanas correspondientes
-    return np.real(np.divide(source_array, sum_wind2 + 1e-15))
-
-
-def get_mfcc(audio, samplerate, nfft=2048):
-    mfcc_vect = mfcc(audio, samplerate, nfft=nfft)
-    return mfcc_vect.mean(0)
-
-
-def get_mfcc_by_respiratory_segments(audio, samplerate, symptom, filename):
-    # Se obtiene la lista de puntos de segmentación 
-    list_points = get_segmentation_points_by_filename(symptom, filename)
-
-    # Agregando la primera y la última para tener los intervalos
-    list_points = [0] + list_points + [len(audio)]
-    
-    mfcc_vect = []
-    # Separando por tramos
-    for i in range(1, len(list_points)):
-        # Límites a considerar del audio
-        begin = list_points[i - 1]
-        endls = list_points[i]
-        
-        # Ciclo respiratorio
-        audio_segment = audio[begin:endls]
-        
-        # Obteniendo el MFCC a partir de este segmento
-        mfcc_segment = mfcc_in_segm(audio_segment, sr=samplerate, n_mfcc=13)
-        print(mfcc_segment)
-        exit()
-        
-        # Agregando a la lista
-        mfcc_vect.append(mfcc_segment)
-        
-    # Transformando la lista en matriz
-    print(len(mfcc_vect))
-    print(len(mfcc_vect[0]))
-    exit()
-        
-
 def normalize(X):
     mf = X.mean(0)
     sf = X.std(0)
     a = 1 / sf
     b = - mf / sf
     return X * a + b, a, b
-
-
-def apply_function_to_audio(func, audio, samplerate, separation=1024,
-                            overlap=0):
-    # Definir los límites del traslape
-    if overlap >= 100:
-        overlap = 99
-    elif overlap < 0:
-        overlap = 0
-
-    # Vectores de valores para cada descriptor
-    out = []
-    time_list = []
-    t = 0
-
-    # Audio auxiliar que guarda el valor anterior para el flujo espectral
-    audio_before = None
-
-    while audio.any():
-        # Se corta la cantidad de muestras que se necesite, o bien, las que se
-        # puedan cortar
-        if len(audio) >= separation:
-            q_samples = separation
-            avance = int(separation * (1 - overlap))
-        else:
-            q_samples = len(audio)
-            if len(audio >= separation * (1 - overlap)):
-                avance = int(separation * (1 - overlap))
-            else:
-                avance = len(audio)
-
-        # Recorte en la cantidad de muestras
-        audio_frame = audio[:q_samples]
-        audio = audio[avance:]
-
-        # Obtención del descriptor para cada frame. En caso de que se trabaje
-        # con flujo espectral se debe hacer un proceso más particular
-        if func.__name__ == "flujo_espectral":
-            if audio_before is not None:
-                out.append(func(audio_frame, audio_before))
-            else:
-                out.append(1)
-        else:
-            out.append(func(audio_frame))
-        time_list.append(t)
-        t += q_samples / samplerate
-
-        # Actualizar el valor de audio antiguo con el valor que se deja
-        audio_before = audio_frame
-
-    return time_list, out
 
 
 # Módulo de testeo
